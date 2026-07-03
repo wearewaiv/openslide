@@ -136,7 +136,7 @@ static bool decode_tile(struct level *l,
   }
 
   // read raw tile
-  void *buf;
+  g_autofree void *buf = NULL;
   int32_t buflen;
   if (!_openslide_tiff_read_tile_data(tiffl, tiff,
                                       &buf, &buflen,
