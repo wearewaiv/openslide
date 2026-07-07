@@ -1,0 +1,5 @@
+openslide (@VERSION@-1) unstable; urgency=medium
+
+  * Packaged by WAIV CI for internal distribution.
+
+ -- WAIV CI <ci@wearewaiv.com>  @DATE@
