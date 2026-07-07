@@ -1,0 +1,14 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: openslide
+Source: https://github.com/wearewaiv/openslide
+
+Files: *
+Copyright: The OpenSlide project and contributors
+License: LGPL-2.1
+
+License: LGPL-2.1
+ This package is distributed under the GNU Lesser General Public License,
+ version 2.1, as published by the Free Software Foundation.
+ .
+ The complete text is included in the upstream COPYING.LESSER file
+ shipped alongside this source.

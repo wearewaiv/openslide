@@ -1,0 +1,19 @@
+#!/usr/bin/make -f
+
+%:
+	dh $@ --buildsystem=meson
+
+override_dh_auto_configure:
+	dh_auto_configure -- -Db_lto=true -Dtest=disabled -Ddoc=disabled
+
+# Split by meson install tag: 'runtime' (.so files) -> libopenslide1,
+# 'devel' (headers, .pc, unversioned .so symlink) -> libopenslide-dev.
+# Skips tag 'bin' entirely (slidetool, dcm-dump, dcm-getframe) - not shipped.
+# Also strip Requires.private from openslide.pc: it lists pkg-config names
+# (libzstd, libjpeg, ...) whose .pc only ships in -dev packages, which makes
+# `pkg-config --exists` fail even though linking works fine (those libs are
+# already baked into libopenslide.so.1).
+override_dh_auto_install:
+	meson install -C $$(ls -d obj-*) --destdir=$(CURDIR)/debian/libopenslide1 --tags=runtime
+	meson install -C $$(ls -d obj-*) --destdir=$(CURDIR)/debian/libopenslide-dev --tags=devel
+	sed -i '/^Requires\.private:/d' debian/libopenslide-dev/usr/lib/*/pkgconfig/openslide.pc

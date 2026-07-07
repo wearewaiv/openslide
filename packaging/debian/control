@@ -1,0 +1,37 @@
+Source: openslide
+Section: libs
+Priority: optional
+Maintainer: WAIV CI <ci@wearewaiv.com>
+Build-Depends: debhelper-compat (= 13),
+               meson,
+               ninja-build,
+               pkg-config,
+               libcairo2-dev,
+               libglib2.0-dev,
+               libjpeg-dev | libjpeg-turbo8-dev,
+               libopenjp2-7-dev,
+               libpng-dev,
+               libsqlite3-dev,
+               libtiff-dev,
+               libxml2-dev,
+               libzstd-dev,
+               zlib1g-dev
+Standards-Version: 4.6.2
+Homepage: https://openslide.org
+
+Package: libopenslide1
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: library for reading whole slide images (runtime)
+ OpenSlide is a C library for reading whole slide image files (also known
+ as virtual slides).
+ .
+ This package bundles libdicom, which has no system package on
+ Debian/Ubuntu.
+
+Package: libopenslide-dev
+Section: libdevel
+Architecture: any
+Depends: libopenslide1 (= ${binary:Version}), ${misc:Depends}
+Description: library for reading whole slide images (development files)
+ Headers and pkg-config file for building against libopenslide.
