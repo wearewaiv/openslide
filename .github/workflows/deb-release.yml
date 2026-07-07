@@ -9,53 +9,74 @@ permissions:
   contents: write
 
 jobs:
+  env-vars:
+    runs-on: ubuntu-24.04
+    outputs:
+      TAG: ${{ github.event.release.tag_name || format('pr-{0}-{1}', github.event.pull_request.number, github.event.pull_request.head.sha) }}
+    steps:
+      - run: "true"
+
   build:
-    name: Build (${{ matrix.distro }}, ${{ matrix.arch }})
-    runs-on: ubuntu-latest
+    name: Build (${{ matrix.distro }})
+    needs: env-vars
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - distro: debian-trixie
-            base_image: debian:trixie-slim
-            arch: amd64
-          - distro: debian-trixie
-            base_image: debian:trixie-slim
-            arch: arm64
-          - distro: ubuntu-26.04
-            base_image: ubuntu:26.04
-            arch: amd64
-          - distro: ubuntu-26.04
-            base_image: ubuntu:26.04
-            arch: arm64
+        distro: [debian-trixie, ubuntu-26-04]
+    uses: wearewaiv/destra-workflows/.github/workflows/_build_push_docker.yml@5.2.1
+    permissions:
+      contents: read
+      id-token: write
+    with:
+      service-name: openslide/deb
+      docker-registry: 655798858396.dkr.ecr.eu-west-3.amazonaws.com/wearewaiv
+      docker-tag: ${{ needs.env-vars.outputs.TAG }}
+      docker-bake-file: packaging/docker-bake.hcl
+      docker-bake-targets: ${{ matrix.distro }}
+      dockerfile: packaging/deb.Dockerfile
+      bake-context: .
+      docker-platforms: linux/amd64,linux/arm64
+      docker-push: true
+      docker-sign: true
+      github-client-id: ${{ vars.WAIV_GLOBAL_READ_ONLY_CLIENT_ID }}
+    secrets:
+      github-private-key: ${{ secrets.WAIV_GLOBAL_READ_ONLY_CLIENT_SECRET }}
+
+  collect:
+    name: Collect .deb (${{ matrix.distro }}, ${{ matrix.arch }})
+    needs:
+      - env-vars
+      - build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        distro: [debian-trixie, ubuntu-26-04]
+        arch: [amd64, arm64]
+    env:
+      IMAGE: 655798858396.dkr.ecr.eu-west-3.amazonaws.com/wearewaiv/openslide/deb:${{ needs.env-vars.outputs.TAG }}-${{ matrix.distro }}
     steps:
-      - name: Check out repo
-        uses: actions/checkout@v6
+      - name: Auth to AWS ECR
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-region: eu-west-3
+          role-to-assume: arn:aws:iam::655798858396:role/waiv-shared-services-euw3-gha-ecr-reader
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+      - name: Login to AWS ECR
+        uses: docker/login-action@v4
+        with:
+          registry: 655798858396.dkr.ecr.eu-west-3.amazonaws.com
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build .deb
+      - name: Pull export image and extract .deb files
         run: |
           mkdir -p dist
-          docker buildx build \
-            --platform linux/${{ matrix.arch }} \
-            --build-arg BASE_IMAGE=${{ matrix.base_image }} \
-            --build-arg DISTRO_LABEL=${{ matrix.distro }} \
-            --target export \
-            --output type=local,dest=dist \
-            -f packaging/deb.Dockerfile .
-
-      - name: Test package installs cleanly with apt
-        run: |
-          docker buildx build \
-            --platform linux/${{ matrix.arch }} \
-            --build-arg BASE_IMAGE=${{ matrix.base_image }} \
-            --target smoke-test \
-            -f packaging/deb.Dockerfile .
+          docker pull --platform linux/${{ matrix.arch }} "$IMAGE"
+          cid=$(docker create --platform linux/${{ matrix.arch }} "$IMAGE")
+          docker cp "$cid:/." dist/
+          docker rm "$cid" >/dev/null
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -66,7 +87,7 @@ jobs:
   publish:
     if: github.event_name == 'release'
     name: Attach to release
-    needs: build
+    needs: collect
     runs-on: ubuntu-latest
     permissions:
       contents: write
