@@ -741,12 +741,36 @@ struct _openslide_tiffcache *_openslide_tiffcache_create(const char *filename) {
   return tc;
 }
 
-struct _openslide_cached_tiff _openslide_tiffcache_get(struct _openslide_tiffcache *tc,
-                                                       GError **err) {
+// An idle handle, preferably one already on directory dir when want_dir:
+// reading a level from a handle on another directory makes libtiff load
+// that directory, with every tag in it (13 MB ICC profiles on each directory
+// of Aperio GT450 slides), and requests for different levels of a slide
+// otherwise keep moving the same few handles between directories.
+static struct _openslide_cached_tiff tiffcache_get(struct _openslide_tiffcache *tc,
+                                                   bool want_dir, tdir_t dir,
+                                                   GError **err) {
   //g_debug("get TIFF");
   g_mutex_lock(&tc->lock);
   tc->outstanding++;
-  TIFF *tiff = g_queue_pop_head(tc->cache);
+  TIFF *tiff = NULL;
+  bool open_new = false;
+  if (want_dir) {
+    for (GList *link = tc->cache->head; link; link = link->next) {
+      if (TIFFCurrentDirectory(link->data) == dir) {
+        tiff = link->data;
+        g_queue_delete_link(tc->cache, link);
+        break;
+      }
+    }
+    // None on dir: while the cache has room for one more handle, open one
+    // rather than moving another off its directory, so each level a slide
+    // is read at ends up with handles of its own.
+    open_new = tiff == NULL &&
+      tc->outstanding + g_queue_get_length(tc->cache) <= HANDLE_CACHE_MAX;
+  }
+  if (tiff == NULL && !open_new) {
+    tiff = g_queue_pop_head(tc->cache);
+  }
   g_mutex_unlock(&tc->lock);
 
   if (tiff == NULL) {
@@ -764,6 +788,17 @@ struct _openslide_cached_tiff _openslide_tiffcache_get(struct _openslide_tiffcac
     .tiff = tiff,
   };
   return ct;
+}
+
+struct _openslide_cached_tiff _openslide_tiffcache_get(struct _openslide_tiffcache *tc,
+                                                       GError **err) {
+  return tiffcache_get(tc, false, 0, err);
+}
+
+struct _openslide_cached_tiff _openslide_tiffcache_get_dir(struct _openslide_tiffcache *tc,
+                                                           tdir_t dir,
+                                                           GError **err) {
+  return tiffcache_get(tc, true, dir, err);
 }
 
 void _openslide_cached_tiff_put(struct _openslide_cached_tiff *ct) {
