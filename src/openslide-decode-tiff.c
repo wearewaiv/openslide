@@ -79,6 +79,24 @@ struct associated_image {
     result = tmp;							\
   } while (0)
 
+// libtiff loads the ICC profile of a directory with its other tags, and keeps
+// it while the handle stays on that directory.  Scanners write profiles of
+// several MB on every directory (13 MB on each of the 7 of Aperio GT450
+// slides), and the cache holds up to HANDLE_CACHE_MAX handles per slide: drop
+// it.  The profile is only read on demand, by reloading its directory.
+static void drop_icc_profile(TIFF *tiff) {
+  TIFFUnsetField(tiff, TIFFTAG_ICCPROFILE);
+}
+
+// Loads directory dir with its ICC profile, even if the handle is on it.
+static bool load_dir_with_icc_profile(TIFF *tiff, tdir_t dir, GError **err) {
+  if (!TIFFSetDirectory(tiff, dir)) {  // ci-allow
+    _openslide_tiff_error(err, tiff, "Cannot set TIFF directory %d", dir);
+    return false;
+  }
+  return true;
+}
+
 bool _openslide_tiff_set_dir(TIFF *tiff,
                              tdir_t dir,
                              GError **err) {
@@ -90,6 +108,7 @@ bool _openslide_tiff_set_dir(TIFF *tiff,
     _openslide_tiff_error(err, tiff, "Cannot set TIFF directory %d", dir);
     return false;
   }
+  drop_icc_profile(tiff);
   return true;
 }
 
@@ -515,7 +534,9 @@ bool _openslide_tiff_get_icc_profile_size(TIFF *tiff, tdir_t dir,
                                           int64_t *icc_profile_size,
                                           GError **err) {
   // set directory
-  SET_DIR_OR_FAIL(tiff, dir);
+  if (!load_dir_with_icc_profile(tiff, dir, err)) {
+    return false;
+  }
 
   // get profile
   void *data;
@@ -526,6 +547,7 @@ bool _openslide_tiff_get_icc_profile_size(TIFF *tiff, tdir_t dir,
     // 0 means no profile available
     *icc_profile_size = 0;
   }
+  drop_icc_profile(tiff);
 
   return true;
 }
@@ -534,7 +556,9 @@ bool _openslide_tiff_read_icc_profile(TIFF *tiff, tdir_t dir,
                                       void *dest, int64_t expected_size,
                                       GError **err) {
   // set directory
-  SET_DIR_OR_FAIL(tiff, dir);
+  if (!load_dir_with_icc_profile(tiff, dir, err)) {
+    return false;
+  }
 
   // get profile
   uint32_t data_len;
@@ -547,11 +571,13 @@ bool _openslide_tiff_read_icc_profile(TIFF *tiff, tdir_t dir,
 
   // copy to output
   if (data_len != expected_size) {
+    drop_icc_profile(tiff);
     g_set_error(err, OPENSLIDE_ERROR, OPENSLIDE_ERROR_FAILED,
                 "ICC profile size changed");
     return false;
   }
   memcpy(dest, data, data_len);
+  drop_icc_profile(tiff);
 
   return true;
 }
@@ -753,6 +779,8 @@ void _openslide_cached_tiff_put(struct _openslide_cached_tiff *ct) {
   g_assert(tc->outstanding);
   tc->outstanding--;
   if (g_queue_get_length(tc->cache) < HANDLE_CACHE_MAX) {
+    // the vendor drivers walk directories with TIFFReadDirectory()
+    drop_icc_profile(tiff);
     tiff_clear_error(hdl);
     if (hdl->f) {
       _openslide_fclose(g_steal_pointer(&hdl->f));
