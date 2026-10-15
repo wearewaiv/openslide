@@ -133,7 +133,7 @@ static bool paint_region(openslide_t *osr, cairo_t *cr,
   struct argos_ops_data *data = osr->data;
   struct level *l = (struct level *) level;
 
-  g_auto(_openslide_cached_tiff) ct = _openslide_tiffcache_get(data->tc, err);
+  g_auto(_openslide_cached_tiff) ct = _openslide_tiffcache_get_dir(data->tc, l->tiffl.dir, err);
   if (ct.tiff == NULL) {
     return false;
   }

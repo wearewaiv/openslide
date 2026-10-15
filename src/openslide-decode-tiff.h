@@ -112,6 +112,12 @@ struct _openslide_tiffcache *_openslide_tiffcache_create(const char *filename);
 struct _openslide_cached_tiff _openslide_tiffcache_get(struct _openslide_tiffcache *tc,
                                                        GError **err);
 
+// Like _openslide_tiffcache_get(), preferring an idle handle already on
+// directory dir.  result.tiff is NULL on error
+struct _openslide_cached_tiff _openslide_tiffcache_get_dir(struct _openslide_tiffcache *tc,
+                                                           tdir_t dir,
+                                                           GError **err);
+
 void _openslide_cached_tiff_put(struct _openslide_cached_tiff *ct);
 
 void _openslide_tiffcache_destroy(struct _openslide_tiffcache *tc);
