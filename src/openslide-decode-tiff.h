@@ -66,6 +66,15 @@ bool _openslide_tiff_read_tile(struct _openslide_tiff_level *tiffl,
                                int64_t tile_col, int64_t tile_row,
                                GError **err);
 
+// like _openslide_tiff_read_tile(), from raw tile data already read with
+// _openslide_tiff_read_tile_data(); data may be NULL to read it here
+bool _openslide_tiff_decode_tile_data(struct _openslide_tiff_level *tiffl,
+                                      TIFF *tiff,
+                                      uint32_t *dest,
+                                      int64_t tile_col, int64_t tile_row,
+                                      const void *data, int32_t datalen,
+                                      GError **err);
+
 bool _openslide_tiff_read_tile_data(struct _openslide_tiff_level *tiffl,
                                     TIFF *tiff,
                                     void **buf, int32_t *len,
