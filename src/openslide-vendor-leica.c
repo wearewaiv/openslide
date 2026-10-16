@@ -158,9 +158,11 @@ static bool read_tile(openslide_t *osr,
 
   // cache
   g_autoptr(_openslide_cache_entry) cache_entry = NULL;
-  uint32_t *tiledata = _openslide_cache_get(osr->cache,
-                                            args->area, tile_col, tile_row,
-                                            &cache_entry);
+  g_autoptr(_openslide_decode_locker) decode_locker = NULL;
+  uint32_t *tiledata = _openslide_cache_get_or_lock(osr->cache,
+                                                    args->area, tile_col, tile_row,
+                                                    &cache_entry,
+                                                    &decode_locker);
   if (!tiledata) {
     g_autofree uint32_t *buf = g_new(uint32_t, tw * th);
     if (!_openslide_tiff_read_tile(tiffl, args->tiff,
@@ -182,6 +184,7 @@ static bool read_tile(openslide_t *osr,
 			 args->area, tile_col, tile_row,
 			 tiledata, tw * th * 4,
 			 &cache_entry);
+    g_clear_pointer(&decode_locker, _openslide_decode_locker_release);
   }
 
   // draw it

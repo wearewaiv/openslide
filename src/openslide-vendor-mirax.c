@@ -276,11 +276,13 @@ static bool read_tile(openslide_t *osr,
 
   // get the image data, possibly from cache
   g_autoptr(_openslide_cache_entry) cache_entry = NULL;
-  uint32_t *tiledata = _openslide_cache_get(osr->cache,
-                                            level,
-                                            tile->image->imageno,
-                                            0,
-                                            &cache_entry);
+  g_autoptr(_openslide_decode_locker) decode_locker = NULL;
+  uint32_t *tiledata = _openslide_cache_get_or_lock(osr->cache,
+                                                    level,
+                                                    tile->image->imageno,
+                                                    0,
+                                                    &cache_entry,
+                                                    &decode_locker);
 
   if (!tiledata) {
     tiledata = read_image(osr, tile->image, l->image_format, iw, ih, err);
@@ -293,6 +295,7 @@ static bool read_tile(openslide_t *osr,
                          tiledata,
                          iw * ih * 4,
                          &cache_entry);
+    g_clear_pointer(&decode_locker, _openslide_decode_locker_release);
   }
 
   // draw it

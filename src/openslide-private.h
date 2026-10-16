@@ -361,6 +361,27 @@ void *_openslide_cache_get(struct _openslide_cache_binding *cb,
                            int64_t y,
                            struct _openslide_cache_entry **entry);
 
+// Threads that miss the cache on the same tile decode it once.  Looks the
+// tile up; on a miss, takes the tile's decode lock and looks again.  If the
+// tile is still missing, sets *locker: decode the tile, put it in the cache,
+// then release the locker, and the waiting threads find the tile in the
+// cache.  No lock is taken when the cache has no capacity, or when this
+// thread already holds one (a tile drawn from other tiles).
+struct _openslide_decode_locker;
+
+void *_openslide_cache_get_or_lock(struct _openslide_cache_binding *cb,
+                                   void *plane,
+                                   int64_t x,
+                                   int64_t y,
+                                   struct _openslide_cache_entry **entry,
+                                   struct _openslide_decode_locker **locker);
+
+void _openslide_decode_locker_release(struct _openslide_decode_locker *locker);
+
+typedef struct _openslide_decode_locker _openslide_decode_locker;
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(_openslide_decode_locker,
+                              _openslide_decode_locker_release)
+
 // value unref
 void _openslide_cache_entry_unref(struct _openslide_cache_entry *entry);
 
