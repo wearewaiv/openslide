@@ -159,10 +159,14 @@ static bool decode_tile(struct level *l,
     // In large SVS Aperio images, a tile (typically 0, 0), in one or more levels, is partly overwritten.
     // This also overrides the JPEG marker.
     // Return false in order to fallback to a missing tile.
-    if (bytes[0] == 0x11 || (bytes[0] == 0xff && bytes[1] == 0x11)) {
+    if ((buflen >= 1 && bytes[0] == 0x11) ||
+        (buflen >= 2 && bytes[0] == 0xff && bytes[1] == 0x11)) {
       return render_missing_tile(l, tiff, dest, tile_col, tile_row, err);
     } else {
-      return _openslide_tiff_read_tile(tiffl, tiff, dest, tile_col, tile_row, err);
+      // decode the data we already have instead of reading it again
+      return _openslide_tiff_decode_tile_data(tiffl, tiff, dest,
+                                              tile_col, tile_row,
+                                              buf, buflen, err);
     }
   }
 
