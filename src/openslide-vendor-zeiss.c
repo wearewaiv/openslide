@@ -524,8 +524,10 @@ static bool read_tile(openslide_t *osr, cairo_t *cr,
   struct czi_subblk *sb = tile_data;
 
   g_autoptr(_openslide_cache_entry) cache_entry = NULL;
-  uint32_t *tiledata = _openslide_cache_get(osr->cache, level, tid, 0,
-                                            &cache_entry);
+  g_autoptr(_openslide_decode_locker) decode_locker = NULL;
+  uint32_t *tiledata = _openslide_cache_get_or_lock(osr->cache, level, tid, 0,
+                                                    &cache_entry,
+                                                    &decode_locker);
   if (!tiledata) {
     g_autofree uint32_t *buf = g_new(uint32_t, sb->w * sb->h);
     if (!read_subblk(f, czi->zisraw_offset, sb, buf, err)) {
@@ -534,6 +536,7 @@ static bool read_tile(openslide_t *osr, cairo_t *cr,
     tiledata = g_steal_pointer(&buf);
     _openslide_cache_put(osr->cache, level, tid, 0, tiledata,
                          sb->w * sb->h * 4, &cache_entry);
+    g_clear_pointer(&decode_locker, _openslide_decode_locker_release);
   }
 
   g_autoptr(cairo_surface_t) surface =

@@ -671,9 +671,11 @@ static bool read_jpeg_tile(openslide_t *osr,
 
   // get the jpeg data, possibly from cache
   g_autoptr(_openslide_cache_entry) cache_entry = NULL;
-  uint32_t *tiledata = _openslide_cache_get(osr->cache,
-                                            level, tile_col, tile_row,
-                                            &cache_entry);
+  g_autoptr(_openslide_decode_locker) decode_locker = NULL;
+  uint32_t *tiledata = _openslide_cache_get_or_lock(osr->cache,
+                                                    level, tile_col, tile_row,
+                                                    &cache_entry,
+                                                    &decode_locker);
 
   if (!tiledata) {
     g_autofree uint32_t *buf = g_new(uint32_t, tw * th);
@@ -691,6 +693,7 @@ static bool read_jpeg_tile(openslide_t *osr,
 			 tiledata,
 			 tw * th * 4,
 			 &cache_entry);
+    g_clear_pointer(&decode_locker, _openslide_decode_locker_release);
   }
 
   // draw it
@@ -1551,8 +1554,11 @@ static bool ngr_read_tile(openslide_t *osr,
   int64_t th = MIN(NGR_TILE_HEIGHT, l->base.h - tile_y * NGR_TILE_HEIGHT);
   g_autoptr(_openslide_cache_entry) cache_entry = NULL;
   // look up tile in cache
-  uint32_t *tiledata = _openslide_cache_get(osr->cache, level, tile_x, tile_y,
-                                            &cache_entry);
+  g_autoptr(_openslide_decode_locker) decode_locker = NULL;
+  uint32_t *tiledata = _openslide_cache_get_or_lock(osr->cache,
+                                                    level, tile_x, tile_y,
+                                                    &cache_entry,
+                                                    &decode_locker);
 
   if (!tiledata) {
     // read the tile data
@@ -1594,6 +1600,7 @@ static bool ngr_read_tile(openslide_t *osr,
                          tiledata,
                          tw * th * 4,
                          &cache_entry);
+    g_clear_pointer(&decode_locker, _openslide_decode_locker_release);
   }
 
   // draw it

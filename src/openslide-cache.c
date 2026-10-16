@@ -351,6 +351,60 @@ void *_openslide_cache_get(struct _openslide_cache_binding *cb,
   return entry->data;
 }
 
+// decode locks: a fixed set of mutexes picked by tile, shared by every
+// slide (statically allocated GMutexes need no initialization), 32 KiB
+#define DECODE_LOCK_COUNT 4096
+static GMutex decode_locks[DECODE_LOCK_COUNT];
+// the decode lock this thread holds, if any
+static GPrivate decode_lock_held;
+
+void *_openslide_cache_get_or_lock(struct _openslide_cache_binding *cb,
+                                   void *plane,
+                                   int64_t x,
+                                   int64_t y,
+                                   struct _openslide_cache_entry **entry,
+                                   struct _openslide_decode_locker **locker) {
+  *locker = NULL;
+  void *data = _openslide_cache_get(cb, plane, x, y, entry);
+  if (data || g_private_get(&decode_lock_held)) {
+    // a hit, or a tile drawn while decoding another one: taking a second
+    // lock could deadlock
+    return data;
+  }
+
+  g_mutex_lock(&cb->mutex);
+  uint64_t capacity = cb->cache->capacity;
+  g_mutex_unlock(&cb->mutex);
+  if (capacity == 0) {
+    // a waiting thread would not find the tile: let both decode at once
+    return NULL;
+  }
+
+  uint64_t h = (uint64_t) (uintptr_t) plane;
+  h = h * 0x9e3779b97f4a7c15ULL + (uint64_t) x;
+  h = h * 0x9e3779b97f4a7c15ULL + (uint64_t) y;
+  h ^= h >> 33;
+  h *= 0xff51afd7ed558ccdULL;
+  h ^= h >> 33;
+  GMutex *lock = &decode_locks[h % DECODE_LOCK_COUNT];
+  g_mutex_lock(lock);
+  g_private_set(&decode_lock_held, lock);
+
+  // another thread may have decoded it while we waited
+  data = _openslide_cache_get(cb, plane, x, y, entry);
+  if (data) {
+    _openslide_decode_locker_release((struct _openslide_decode_locker *) lock);
+    return data;
+  }
+  *locker = (struct _openslide_decode_locker *) lock;
+  return NULL;
+}
+
+void _openslide_decode_locker_release(struct _openslide_decode_locker *locker) {
+  g_private_set(&decode_lock_held, NULL);
+  g_mutex_unlock((GMutex *) locker);
+}
+
 // value unref
 void _openslide_cache_entry_unref(struct _openslide_cache_entry *entry) {
   //g_debug("unref %p, refs %d", entry, g_atomic_int_get(&entry->refcount));
