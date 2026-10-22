@@ -257,11 +257,45 @@ static bool decode_jpeg(const void *buf, uint32_t buflen,
   }
 }
 
+// decode raw tile data through libjpeg; the directory must be set
+static bool decode_tile_data_direct(struct _openslide_tiff_level *tiffl,
+                                    TIFF *tiff,
+                                    uint32_t *dest,
+                                    const void *buf, int32_t buflen,
+                                    GError **err) {
+  // read tables
+  void *tables;
+  uint32_t tables_len;
+  if (!TIFFGetField(tiff, TIFFTAG_JPEGTABLES, &tables_len, &tables)) {
+    // no separate tables
+    tables = NULL;
+    tables_len = 0;
+  }
+
+  // decompress
+  return decode_jpeg(buf, buflen, tables, tables_len,
+                     tiffl->photometric == PHOTOMETRIC_YCBCR ? JCS_YCbCr : JCS_RGB,
+                     dest,
+                     tiffl->tile_w, tiffl->tile_h,
+                     err);
+}
+
 bool _openslide_tiff_read_tile(struct _openslide_tiff_level *tiffl,
                                TIFF *tiff,
                                uint32_t *dest,
                                int64_t tile_col, int64_t tile_row,
                                GError **err) {
+  return _openslide_tiff_decode_tile_data(tiffl, tiff, dest,
+                                          tile_col, tile_row,
+                                          NULL, 0, err);
+}
+
+bool _openslide_tiff_decode_tile_data(struct _openslide_tiff_level *tiffl,
+                                      TIFF *tiff,
+                                      uint32_t *dest,
+                                      int64_t tile_col, int64_t tile_row,
+                                      const void *data, int32_t datalen,
+                                      GError **err) {
   // set directory
   SET_DIR_OR_FAIL(tiff, tiffl->dir);
 
@@ -272,14 +306,8 @@ bool _openslide_tiff_read_tile(struct _openslide_tiff_level *tiffl,
     // to BGRA, we convert to ARGB.  If we can bypass libtiff when
     // decoding JPEG tiles, we can reduce this to one optimized pass in
     // libjpeg-turbo.
-
-    // read tables
-    void *tables;
-    uint32_t tables_len;
-    if (!TIFFGetField(tiff, TIFFTAG_JPEGTABLES, &tables_len, &tables)) {
-      // no separate tables
-      tables = NULL;
-      tables_len = 0;
+    if (data) {
+      return decode_tile_data_direct(tiffl, tiff, dest, data, datalen, err);
     }
 
     // read data
@@ -291,13 +319,7 @@ bool _openslide_tiff_read_tile(struct _openslide_tiff_level *tiffl,
                                         err)) {
       return false;
     }
-
-    // decompress
-    return decode_jpeg(buf, buflen, tables, tables_len,
-                       tiffl->photometric == PHOTOMETRIC_YCBCR ? JCS_YCbCr : JCS_RGB,
-                       dest,
-                       tiffl->tile_w, tiffl->tile_h,
-                       err);
+    return decode_tile_data_direct(tiffl, tiff, dest, buf, buflen, err);
   } else {
     // Fallback: read tile through libtiff
     _openslide_performance_warn_once(&tiffl->warned_read_indirect,
